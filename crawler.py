@@ -2,6 +2,8 @@
 # -*- coding: UTF-8 -*-
 from glob import glob
 import os
+import sys
+import json
 from time import sleep
 from contextlib import contextmanager
 
@@ -17,7 +19,7 @@ import config
 
 base_url = "chrome-extension://mcgekeccgjgcmhnhbabplanchdogjcnh/"
 background_url = base_url + "_generated_background_page.html"
-storages = ['action_map', 'snitch_map', 'cookieblock_list', 'dnt_hashes', 'settings_map']
+storages = [ 'action_map', 'snitch_map', 'dnt_hashes', 'settings_map' ]
 
 
 @contextmanager
@@ -61,6 +63,26 @@ def dump_data(driver):
     for storage in storages:
         script = 'return badger.storage.%s.getItemClones()' % storage
         data[storage] = driver.execute_script(script)
+
+    # it is not ortodox extraxt info in this way, but the script
+    # is injected in the page, I was not finding the way to use
+    # the privacybadger storage
+    pattern = 'MATCHP';
+    data['fingerprint'] = {}
+    for entry in driver.get_log('browser'):
+        if not entry.has_key('source'):
+            continue
+        if entry['source'] != 'console-api':
+            continue
+
+        try:
+            i = entry['message'].index(pattern) + len(pattern)
+            last = json.loads(entry['message'][i+1:-1].replace('\\', ''))
+            if sys.getsizeof(last) >= sys.getsizeof(data['fingerprint']):
+                data['fingerprint'] = last
+        except ValueError:
+            pass
+
     return data
 
 
@@ -77,14 +99,14 @@ def timeout_workaround(driver):
     return driver
 
 
-def crawl(timeout=7, n_urls=len(top500.urls), start=0):
-    logger.info('starting new crawl with timeout %s n_urls %s start %s' % (timeout, n_urls, start))
+def crawl(timeout):
+    logger.info('starting new crawl with timeout %d n_urls %d' % (timeout, len(top500.urls)))
     with xvfb_manager():
         driver = start_driver()
         driver.set_page_load_timeout(timeout)
         driver.set_script_timeout(timeout)
 
-        for url in top500.urls[start:start+n_urls]:
+        for url in top500.urls:
             try:
                 logger.info('visiting %s' % url)
                 driver.get(url)
@@ -100,4 +122,11 @@ def crawl(timeout=7, n_urls=len(top500.urls), start=0):
 
 if __name__ == '__main__':
     out_file = os.environ.get('OUT_FILE', 'results.json')
-    save_json(out_file, crawl(n_urls=5, start=100))
+    secstimeout = os.environ.get('TIMEOUT', '40')
+    secstimeout = int(secstimeout)
+
+    if len(sys.argv) > 1:
+        print "Received target via command line:", sys.argv[1]
+        top500.urls = [ sys.argv[1] ]
+
+    save_json(out_file, crawl(secstimeout))
