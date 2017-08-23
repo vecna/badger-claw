@@ -5,7 +5,7 @@ from logger import logger
 
 
 def save_json(out_name, out_data):
-    with open(unicode(out_name), 'w+') as f:
+    with open(out_name, 'w+') as f:
         f.write(json.dumps(out_data, indent=4, sort_keys=True))
     logger.info('Data saved successfully to %s' % out_name)
 
